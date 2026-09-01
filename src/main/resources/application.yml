@@ -1,0 +1,117 @@
+spring:
+  application:
+    name: orderflow
+
+  # ── JPA / Hibernate ──────────────────────────────────────────────
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  # ── PostgreSQL ───────────────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:orderflow}
+    username: ${DB_USERNAME:orderflow}
+    password: ${DB_PASSWORD:orderflow}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+
+  # ── SQL Init (schema + seed) ─────────────────────────────────────
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/migration/V001__init_schema.sql
+      continue-on-error: true
+
+  # ── Redis ────────────────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+  # ── Kafka ────────────────────────────────────────────────────────
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: orderflow-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.orderflow.event.dto
+      enable-auto-commit: false
+    listener:
+      ack-mode: manual
+
+  # ── Jackson ──────────────────────────────────────────────────────
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+# ── Server ───────────────────────────────────────────────────────
+server:
+  port: 8080
+  shutdown: graceful
+
+# ── Graceful Shutdown ────────────────────────────────────────────
+spring.lifecycle:
+  timeout-per-shutdown-phase: 30s
+
+# ── Actuator / Observability ─────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+# ── Logging ──────────────────────────────────────────────────────
+logging:
+  pattern:
+    console: "%d{ISO8601} [%thread] [%X{correlationId:-}] %-5level %logger{36} - %msg%n"
+  level:
+    com.orderflow: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+
+# ── App-specific ─────────────────────────────────────────────────
+orderflow:
+  jwt:
+    secret: ${JWT_SECRET:default-dev-secret-change-in-production-must-be-at-least-256-bits-long!!}
+    expiration-ms: 3600000  # 1 hour
+  kafka:
+    topics:
+      order-events: orderflow.order.events
+      order-events-dlt: orderflow.order.events.dlt
+  outbox:
+    poll-interval-ms: 1000
+    batch-size: 50
+  cache:
+    product-ttl-minutes: 30
+  rate-limit:
+    max-requests: 100       # per window per user/IP
+    window-seconds: 60      # sliding window duration

@@ -1,0 +1,29 @@
+spring:
+  sql:
+    init:
+      mode: never
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        format_sql: false
+
+  # Disable Redis caching in tests to avoid cross-test pollution
+  cache:
+    type: none
+
+logging:
+  level:
+    com.orderflow: DEBUG
+    org.springframework.security: DEBUG
+    org.testcontainers: INFO
+    org.hibernate.SQL: WARN
+
+# Speed up tests
+orderflow:
+  outbox:
+    poll-interval-ms: 999999999
+  rate-limit:
+    max-requests: 1000
+    window-seconds: 60
