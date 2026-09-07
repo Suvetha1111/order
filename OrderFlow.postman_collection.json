@@ -1,0 +1,407 @@
+{
+	"info": {
+		"name": "OrderFlow API",
+		"description": "Event-driven order management system — Java 21, Spring Boot 3.3.5, PostgreSQL, Redis, Kafka.\n\nFlow: Register → Login (grab token from Authorization header) → Browse Products → Create Order → Watch status change via Kafka consumers.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080"
+		},
+		{
+			"key": "token",
+			"value": ""
+		},
+		{
+			"key": "productId",
+			"value": ""
+		},
+		{
+			"key": "orderId",
+			"value": ""
+		}
+	],
+	"item": [
+		{
+			"name": "Auth",
+			"description": "Public endpoints — no authentication required.",
+			"item": [
+				{
+					"name": "Register",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    pm.test('Registration successful', function () {",
+									"        pm.expect(json.success).to.be.true;",
+									"        pm.expect(json.data.userId).to.be.a('string');",
+									"    });",
+									"    console.log('User ID: ' + json.data.userId);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fullName\": \"Demo User\",\n  \"email\": \"demo@test.com\",\n  \"password\": \"Demo@123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "register"]
+						},
+						"description": "Register a new user. Fields: fullName, email, password. Default role assigned is CUSTOMER."
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var authHeader = pm.response.headers.get('Authorization');",
+									"    if (authHeader) {",
+									"        var token = authHeader.replace('Bearer ', '');",
+									"        pm.collectionVariables.set('token', token);",
+									"        console.log('JWT Token saved to collection variable.');",
+									"    }",
+									"    var json = pm.response.json();",
+									"    pm.test('Login successful', function () {",
+									"        pm.expect(json.success).to.be.true;",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"demo@test.com\",\n  \"password\": \"Demo@123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "auth", "login"]
+						},
+						"description": "Login with email and password. JWT token is returned ONLY in the Authorization response header (not in the body). The test script auto-saves it to the {{token}} collection variable."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Products",
+			"description": "GET endpoints are public. POST/PUT require ADMIN role.",
+			"item": [
+				{
+					"name": "List Products",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var json = pm.response.json();",
+									"    if (json.data && json.data.content && json.data.content.length > 0) {",
+									"        pm.collectionVariables.set('productId', json.data.content[0].id);",
+									"        console.log('First product ID saved: ' + json.data.content[0].id);",
+									"    }",
+									"    pm.test('Products retrieved', function () {",
+									"        pm.expect(json.success).to.be.true;",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/products?page=0&size=20",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "products"],
+							"query": [
+								{ "key": "page", "value": "0" },
+								{ "key": "size", "value": "20" }
+							]
+						},
+						"description": "Public endpoint. Lists all products with pagination. Auto-saves the first product's ID to {{productId}}."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Product by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/products/{{productId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "products", "{{productId}}"]
+						},
+						"description": "Public endpoint. Returns a single product with inventory details."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Product (Admin)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Wireless Headphones\",\n  \"description\": \"Premium noise-cancelling wireless headphones\",\n  \"price\": 149.99,\n  \"sku\": \"WH-1000\",\n  \"initialStock\": 50\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/products",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "products"]
+						},
+						"description": "Requires ADMIN role. Creates a product with initial inventory."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Product (Admin)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Wireless Headphones Pro\",\n  \"description\": \"Updated premium noise-cancelling headphones\",\n  \"price\": 179.99,\n  \"active\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/products/{{productId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "products", "{{productId}}"]
+						},
+						"description": "Requires ADMIN role. All fields optional (partial update)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Inventory (Admin)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"quantity\": 500\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/products/{{productId}}/inventory",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "products", "{{productId}}", "inventory"]
+						},
+						"description": "Requires ADMIN role. Sets the total inventory quantity for a product."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Orders",
+			"description": "All endpoints require JWT authentication.",
+			"item": [
+				{
+					"name": "Create Order",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    if (json.data && json.data.id) {",
+									"        pm.collectionVariables.set('orderId', json.data.id);",
+									"        console.log('Order ID saved: ' + json.data.id);",
+									"    }",
+									"    pm.test('Order created', function () {",
+									"        pm.expect(json.success).to.be.true;",
+									"        pm.expect(json.data.status).to.eql('PENDING');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 2\n    }\n  ],\n  \"idempotencyKey\": \"demo-order-001\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/orders",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "orders"]
+						},
+						"description": "Creates an order. The idempotencyKey in the body prevents duplicate orders — same key + same user = returns existing order. Change the key for each new order.\n\nAfter creation, status starts as PENDING. The outbox publisher sends the event to Kafka, the payment consumer processes it, and the status changes to CONFIRMED (or FAILED if amount > $10,000)."
+					},
+					"response": []
+				},
+				{
+					"name": "List My Orders",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders?page=0&size=20",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "orders"],
+							"query": [
+								{ "key": "page", "value": "0" },
+								{ "key": "size", "value": "20" }
+							]
+						},
+						"description": "Lists the authenticated user's orders (paginated, newest first). Hit this a few seconds after creating an order to see the status change from PENDING → CONFIRMED."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Order by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/{{orderId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "orders", "{{orderId}}"]
+						},
+						"description": "Returns a single order with its items. Only returns orders belonging to the authenticated user."
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Order",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "orders", "{{orderId}}", "cancel"]
+						},
+						"description": "Cancels an order. Only works if status is PENDING or CONFIRMED. Releases reserved inventory and publishes a cancellation event to Kafka."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Actuator",
+			"description": "Spring Boot Actuator endpoints for monitoring.",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/actuator/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["actuator", "health"]
+						},
+						"description": "Application health including custom outbox lag indicator."
+					},
+					"response": []
+				},
+				{
+					"name": "Prometheus Metrics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/actuator/prometheus",
+							"host": ["{{baseUrl}}"],
+							"path": ["actuator", "prometheus"]
+						},
+						"description": "Prometheus-format metrics including custom order counters, inventory gauges, and API latency histograms."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
